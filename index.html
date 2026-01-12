@@ -14,18 +14,17 @@
         body {
             font-family: 'IBM Plex Sans Arabic', sans-serif;
             background: #f8fafc;
+            margin: 0;
         }
 
         .leaflet-container {
             background: #f1f5f9;
         }
 
-        /* تحسين شكل Geoman Toolbar */
         .leaflet-pm-toolbar {
             border: none !important;
             box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1) !important;
             border-radius: 12px !important;
-            overflow: hidden;
         }
 
         .leaflet-bar button {
@@ -33,14 +32,10 @@
             border-bottom: 1px solid #f1f5f9 !important;
             width: 40px !important;
             height: 40px !important;
-            line-height: 40px !important;
         }
 
         .custom-scrollbar::-webkit-scrollbar {
             width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: transparent;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
             background: #e2e8f0;
@@ -53,6 +48,7 @@
 {
   "imports": {
     "react": "https://esm.sh/react@^19.2.3",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react-leaflet": "https://esm.sh/react-leaflet@^5.0.0",
@@ -61,15 +57,15 @@
     "osmtogeojson": "https://esm.sh/osmtogeojson@^3.0.0-beta.5",
     "@google/genai": "https://esm.sh/@google/genai",
     "path": "https://esm.sh/path@^0.12.7",
+    "url": "https://esm.sh/url@^0.11.4",
     "vite": "https://esm.sh/vite@^7.3.1",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
-    "url": "https://esm.sh/url@^0.11.4"
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
 </head>
 <body class="h-screen overflow-hidden">
     <div id="root" class="h-full"></div>
-<script type="module" src="/index.tsx"></script>
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>

@@ -2,9 +2,16 @@
 import { GoogleGenAI } from "@google/genai";
 
 export const analyzeRegion = async (geojsonData: any) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // المفتاح محقون بواسطة Vite من متغيرات البيئة في Vercel
+  const apiKey = process.env.API_KEY;
   
-  // تلخيص البيانات لإرسالها للنموذج
+  if (!apiKey) {
+    console.error("Gemini API Key missing in environment. Set GEMINI_API_KEY in Vercel settings.");
+    return "خطأ: لم يتم ضبط مفتاح API في إعدادات المشروع (Vercel).";
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+  
   const features = geojsonData.features || [];
   const summary: Record<string, number> = {};
   
@@ -18,7 +25,7 @@ export const analyzeRegion = async (geojsonData: any) => {
     - إجمالي العناصر: ${features.length}
     - توزيع الأصناف: ${JSON.stringify(summary)}
     
-    المطلوب: قدم وصفاً موجزاً (3-4 جمل) باللغة العربية لطبيعة هذه المنطقة (هل هي تجارية، سكنية، صناعية، سياحية؟) وما هي أبرز معالمها بناءً على البيانات.
+    المطلوب: قدم وصفاً موجزاً (3-4 جمل) باللغة العربية لطبيعة هذه المنطقة (هل هي تجارية، سكنية، صناعية، سياحية؟) وما هي أبرز معالمها بناءً على البيانات الجغرافية المتوفرة.
   `;
 
   try {
@@ -28,7 +35,7 @@ export const analyzeRegion = async (geojsonData: any) => {
     });
     return response.text;
   } catch (error) {
-    console.error("AI Analysis Error:", error);
-    return "تعذر تحليل المنطقة حالياً، لكن يمكنك معاينة البيانات يدوياً.";
+    console.error("Gemini API Error:", error);
+    return "حدث خطأ أثناء الاتصال بخدمة الذكاء الاصطناعي. يرجى التأكد من صلاحية مفتاح API.";
   }
 };
