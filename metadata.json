@@ -1,0 +1,7 @@
+{
+  "name": "OSM Data Extractor",
+  "description": "An interactive map tool to draw polygons and export OpenStreetMap data (points, lines, polygons) as GeoJSON for GIS applications.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
