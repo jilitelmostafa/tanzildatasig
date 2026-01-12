@@ -5,14 +5,13 @@ import L from 'leaflet';
 import '@geoman-io/leaflet-geoman-free';
 import Sidebar from './components/Sidebar';
 import { fetchOSMData, downloadGeoJSON } from './services/overpassService';
-import { GoogleGenAI } from "@google/genai";
 
-// أيقونة مخصصة للنقاط المستخرجة
+// Custom marker for extracted points to make them stand out
 const customPointMarker = (feature: any, latlng: L.LatLng) => {
   return L.circleMarker(latlng, {
     radius: 6,
-    fillColor: "#ef4444",
-    color: "#fff",
+    fillColor: "#ef4444", // Red-500
+    color: "#ffffff",
     weight: 2,
     opacity: 1,
     fillOpacity: 0.8
@@ -28,6 +27,7 @@ const GeomanControls: React.FC<{
   useEffect(() => {
     if (!map) return;
 
+    // Initialize Geoman controls
     map.pm.addControls({
       position: 'topleft',
       drawMarker: false,
@@ -41,14 +41,17 @@ const GeomanControls: React.FC<{
       removalMode: true,
     });
 
-    // Fix: Cast 'ar' to any because 'ar' might be missing from the SupportLocales type definition 
-    // despite being supported by the library at runtime.
-    map.pm.setLang('ar' as any);
+    // Set Arabic language if available, cast to any to bypass strict type checks
+    try {
+      (map.pm as any).setLang('ar');
+    } catch (e) {
+      console.warn("Could not set Geoman language to Arabic", e);
+    }
 
-    // تحديد النمط البصري للمضلع المرسوم (أزرق بوزن واضح)
+    // Default style for drawn shapes
     const drawStyle = {
-      color: '#2563eb',
-      fillColor: '#3b82f6',
+      color: '#2563eb', // Blue-600
+      fillColor: '#3b82f6', // Blue-500
       fillOpacity: 0.2,
       weight: 3,
       dashArray: '5, 5'
@@ -56,25 +59,40 @@ const GeomanControls: React.FC<{
     
     map.pm.setPathOptions(drawStyle);
 
+    // Event listener for when a polygon or rectangle is finished
     map.on('pm:create', (e: any) => {
       const layer = e.layer;
       if (layer instanceof L.Polygon) {
+        // Apply styling
+        layer.setStyle(drawStyle);
+
         const latlngs = layer.getLatLngs()[0] as L.LatLng[];
         const coords: [number, number][] = latlngs.map(ll => [ll.lat, ll.lng]);
         onPolygonCreated(coords);
 
-        // مسح المضلعات السابقة لضمان تحديد منطقة واحدة
+        // Keep map clean: remove previous drawings
         map.eachLayer((l: any) => {
           if (l instanceof L.Polygon && l !== layer && (l as any).pm) {
             map.removeLayer(l);
           }
+        });
+
+        // Update coordinates on edit
+        layer.on('pm:edit', () => {
+          const updatedLatLngs = layer.getLatLngs()[0] as L.LatLng[];
+          const updatedCoords: [number, number][] = updatedLatLngs.map(ll => [ll.lat, ll.lng]);
+          onPolygonCreated(updatedCoords);
         });
       }
     });
 
     map.on('pm:remove', () => onPolygonDeleted());
 
-    return () => { map.pm.removeControls(); };
+    return () => { 
+      if (map.pm) {
+        map.pm.removeControls(); 
+      }
+    };
   }, [map, onPolygonCreated, onPolygonDeleted]);
 
   return null;
@@ -84,8 +102,6 @@ const App: React.FC = () => {
   const [selectedPolygon, setSelectedPolygon] = useState<[number, number][] | null>(null);
   const [osmData, setOsmData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [config, setConfig] = useState({
     points: true,
     lines: true,
@@ -96,72 +112,41 @@ const App: React.FC = () => {
   const handleAction = async () => {
     if (!selectedPolygon) return;
     
-    // إذا كانت البيانات موجودة مسبقاً، نقوم بتحميلها كملف
+    // If we already have data, download it
     if (osmData) {
       downloadGeoJSON(osmData, `osm_extract_${new Date().getTime()}`);
       return;
     }
 
+    // Otherwise, fetch data from Overpass
     setIsLoading(true);
-    setAiAnalysis(null);
     try {
       const data = await fetchOSMData(selectedPolygon, config);
-      if (data.features.length === 0) {
-        alert('لم يتم العثور على بيانات في هذه المنطقة. حاول توسيع المنطقة أو تغيير الأصناف.');
+      if (!data || !data.features || data.features.length === 0) {
+        alert('لم يتم العثور على بيانات في هذه المنطقة. حاول اختيار أصناف مختلفة أو توسيع المنطقة.');
       } else {
         setOsmData(data);
       }
-    } catch (err) {
-      alert('خطأ في جلب البيانات من Overpass API.');
+    } catch (err: any) {
+      console.error(err);
+      alert(`خطأ في جلب البيانات: ${err.message || 'حدث خطأ غير متوقع'}`);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Fix: Added AI Analysis function using Gemini to provide insights on the extracted data
-  const analyzeData = async () => {
-    if (!osmData) return;
-    setIsAnalyzing(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Extract a summary of features for context
-      const featuresSummary = osmData.features.slice(0, 40).map((f: any) => {
-        const p = f.properties || {};
-        return {
-          name: p.name || p['name:ar'] || 'غير مسمى',
-          type: p.building ? 'مبنى' : (p.highway ? 'طريق' : (p.amenity || p.landuse || 'معلم')),
-          category: p.amenity || p.shop || p.tourism || 'عام'
-        };
-      });
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `بصفتك خبيرًا في البيانات الجغرافية، قم بتحليل قائمة المعالم التالية من خريطة OpenStreetMap وقدم تقريرًا موجزًا (4-5 جمل) باللغة العربية حول طابع هذه المنطقة (مثلاً: سكنية، تجارية، سياحية، إلخ) وما هي أبرز مكوناتها المكتشفة: ${JSON.stringify(featuresSummary)}`,
-      });
-      setAiAnalysis(response.text);
-    } catch (err) {
-      console.error("AI Analysis failed:", err);
-      setAiAnalysis("فشل التحليل الذكي للبيانات حالياً.");
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  // تصفير النتائج عند تغيير منطقة التحديد
   const resetData = useCallback(() => {
     setOsmData(null);
     setSelectedPolygon(null);
-    setAiAnalysis(null);
   }, []);
 
   const setPolygon = useCallback((coords: [number, number][]) => {
     setOsmData(null);
     setSelectedPolygon(coords);
-    setAiAnalysis(null);
   }, []);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-gray-100">
+    <div className="flex flex-col md:flex-row h-screen w-screen overflow-hidden bg-gray-50">
       <Sidebar 
         onDownload={handleAction} 
         isLoading={isLoading} 
@@ -171,14 +156,14 @@ const App: React.FC = () => {
         setConfig={setConfig}
       />
 
-      <div className="flex-1 relative">
+      <div className="flex-1 relative order-first md:order-last">
         <MapContainer 
           center={[34.0209, -6.8416]} 
           zoom={13} 
           className="h-full w-full"
         >
           <TileLayer
-            attribution='&copy; OSM contributors'
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
             url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           />
           
@@ -187,24 +172,27 @@ const App: React.FC = () => {
             onPolygonDeleted={resetData}
           />
 
-          {/* عرض البيانات المستخرجة على الخريطة */}
+          {/* Render extracted data */}
           {osmData && (
             <GeoJSON 
               data={osmData} 
               pointToLayer={customPointMarker}
               style={(feature) => ({
                 color: feature?.geometry?.type === 'LineString' ? '#3b82f6' : '#10b981',
-                weight: 2,
-                fillOpacity: 0.4
+                weight: 3,
+                opacity: 0.8,
+                fillOpacity: 0.3
               })}
               onEachFeature={(feature, layer) => {
                 const tags = feature.properties || {};
                 const name = tags.name || tags['name:ar'] || 'بدون اسم';
                 layer.bindPopup(`
-                  <div class="p-2 font-sans">
-                    <h4 class="font-bold text-blue-600 mb-1 border-b pb-1">${name}</h4>
-                    <div class="text-[10px] space-y-1 overflow-auto max-h-32">
-                      ${Object.entries(tags).map(([k, v]) => `<div><strong>${k}:</strong> ${v}</div>`).join('')}
+                  <div class="p-2 min-w-[150px]">
+                    <h4 class="font-bold text-blue-700 border-b border-gray-100 pb-2 mb-2">${name}</h4>
+                    <div class="text-[11px] space-y-1 max-h-40 overflow-y-auto pr-1">
+                      ${Object.entries(tags).length > 0 
+                        ? Object.entries(tags).map(([k, v]) => `<div><span class="text-gray-400">${k}:</span> <span class="text-gray-700">${v}</span></div>`).join('') 
+                        : '<div class="text-gray-400 italic">لا توجد وسوم إضافية</div>'}
                     </div>
                   </div>
                 `);
@@ -213,55 +201,22 @@ const App: React.FC = () => {
           )}
         </MapContainer>
 
-        {/* AI Analysis Button and Result Card */}
-        {osmData && !isLoading && (
-          <div className="absolute top-4 right-4 z-[1000] flex flex-col items-end space-y-2">
-            <button 
-              onClick={analyzeData}
-              disabled={isAnalyzing}
-              className="bg-white/90 backdrop-blur px-4 py-2 rounded-lg shadow-lg border border-blue-200 text-blue-700 font-bold flex items-center hover:bg-white transition-all active:scale-95"
-            >
-              {isAnalyzing ? (
-                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin ml-2"></div>
-              ) : (
-                <span className="ml-2">🤖</span>
-              )}
-              تحليل المنطقة بالذكاء الاصطناعي
-            </button>
-            
-            {aiAnalysis && (
-              <div className="max-w-xs bg-white p-4 rounded-xl shadow-2xl border border-blue-100 text-sm text-gray-700 animate-in fade-in slide-in-from-top-2">
-                <div className="font-bold text-blue-600 mb-1 flex items-center">
-                  <span>✨ رؤية ذكية للمنطقة:</span>
-                </div>
-                <p className="leading-relaxed whitespace-pre-wrap">{aiAnalysis}</p>
-                <button 
-                  onClick={() => setAiAnalysis(null)}
-                  className="mt-2 text-[10px] text-gray-400 hover:text-gray-600"
-                >
-                  إغلاق التحليل
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* مؤشر التحميل */}
+        {/* Loading Overlay */}
         {isLoading && (
-          <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-[2000] flex items-center justify-center">
-            <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center">
-              <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-              <span className="mt-4 font-bold text-gray-800">جاري استخراج المعطيات...</span>
+          <div className="absolute inset-0 bg-white/30 backdrop-blur-[1px] z-[2000] flex items-center justify-center">
+            <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center">
+              <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              <span className="mt-5 font-bold text-gray-800 text-lg">جاري استخلاص المعطيات الجغرافية...</span>
             </div>
           </div>
         )}
 
-        {/* دليل المستخدم العائم */}
+        {/* Floating User Instruction */}
         {!selectedPolygon && !isLoading && (
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-[1000] pointer-events-none">
-            <div className="bg-gray-900/80 backdrop-blur text-white px-6 py-3 rounded-full shadow-2xl flex items-center border border-white/20">
-              <span className="animate-pulse ml-2">🖱️</span>
-              اختر أداة المضلع من اليسار لرسم منطقة البحث
+          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-[1000] pointer-events-none">
+            <div className="bg-blue-900/90 backdrop-blur text-white px-8 py-3 rounded-full shadow-2xl flex items-center border border-white/20">
+              <span className="animate-pulse ml-3">🎯</span>
+              ارسم مضلعاً على الخريطة لتحديد نطاق البيانات
             </div>
           </div>
         )}
